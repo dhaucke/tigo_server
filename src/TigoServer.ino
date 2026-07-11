@@ -13,7 +13,7 @@ const char* hostname = "TigoServer";
 const char* TZ_STRING = "CET-1CEST,M3.5.0/2,M10.5.0/3"; // Modifica per il tuo fuso orario
 const char* ssid = ""; //SSID
 const char* password = ""; //passwort
-const char* MQTT_BROKER = ""; //MQTT Server IP
+const char* MQTT_BROKER = "192.168.x.x"; //MQTT Server IP
 const char* mqtt_user = "";
 const char* mqtt_pass = "";
 
@@ -21,8 +21,8 @@ constexpr uint16_t POLYNOMIAL = 0x8408;  // Reversed polynomial (0x1021 reflecte
 constexpr size_t TABLE_SIZE = 256;
 uint16_t CRC_TABLE[TABLE_SIZE];
 
-#define RX_PIN 3  // Define the RX pin
-#define TX_PIN 1  // Define the TX pin
+#define RX_PIN 16  // Define the RX pin
+#define TX_PIN 17  // Define the TX pin
 
 String incomingData = "";
 String completeFrame = "";
@@ -38,6 +38,13 @@ void savePanelMap();
 void handleRoot();
 String generateFileListHTML();
 void handleFileUpload();
+void publishMQTT();
+void publishHubDiscovery();
+void publishHubState();
+void publishDiscovery(int i);
+void publishDiscoverySensor(const String& addr, const String& deviceName, const String& key,
+                             const String& unit, const String& deviceClass, const String& stateClass);
+void resetDiscoveryFlags();
 
 File uploadFile;
 
@@ -53,6 +60,7 @@ struct DeviceData {
   int rssi;
   String barcode;
   bool changed = false;
+  bool discoverySent = false;
 };
 DeviceData devices[100]; // Array to store data for up to 100 devices
 int deviceCount = 0; // To keep track of how many devices are being tracked
@@ -215,6 +223,114 @@ void WebsocketSend(bool send_all = false) {
   }
 }
 
+// ── MQTT: published pro Panel ein Topic tigo/<addr>/state mit JSON-Payload ──
+// addr ist stabil (ändert sich nicht bei Panel-Umbenennung), Label steht im Discovery-Namen
+void publishMQTT() {
+  if (!MQTT_Client.connected()) return;
+  for (int i = 0; i < deviceCount; i++) {
+    DeviceData& d = devices[i];
+
+    if (!d.discoverySent) {
+      publishDiscovery(i);
+      d.discoverySent = true;
+    }
+
+    StaticJsonDocument<256> doc;
+    doc["watt"]    = round(d.voltage_out * d.current_in);
+    doc["vin"]     = d.voltage_in;
+    doc["vout"]    = d.voltage_out;
+    doc["amp"]     = d.current_in;
+    doc["temp"]    = d.temperature;
+    doc["rssi"]    = d.rssi;
+    doc["barcode"] = d.barcode;
+
+    String payload;
+    serializeJson(doc, payload);
+
+    String topic = "tigo/" + d.addr + "/state";
+    MQTT_Client.publish(topic.c_str(), payload.c_str());
+  }
+}
+
+// ── MQTT Discovery: meldet die CCA/TAP-Anlage selbst als übergeordnetes Hub-Gerät an ──
+// Alle Panels verweisen per via_device auf "tigo_server" und erscheinen dadurch
+// auf der Geräteseite des Hubs als verknüpfte Geräte (kein echter Ordnerbaum, aber nah dran)
+void publishHubDiscovery() {
+  StaticJsonDocument<512> doc;
+  doc["name"]           = "Panels";
+  doc["unique_id"]      = "tigo_server_panelcount";
+  doc["state_topic"]    = "tigo/server/state";
+  doc["value_template"] = "{{ value_json.panelCount }}";
+  doc["icon"]           = "mdi:solar-panel";
+
+  JsonObject dev = doc.createNestedObject("device");
+  JsonArray ids = dev.createNestedArray("identifiers");
+  ids.add("tigo_server");
+  dev["name"]         = "TigoServer";
+  dev["manufacturer"] = "DIY (Bobsilvio tigo_server)";
+  dev["model"]        = "ESP32 RS485 Sniffer";
+
+  String payload;
+  serializeJson(doc, payload);
+  MQTT_Client.publish("homeassistant/sensor/tigo_server_panelcount/config", payload.c_str(), true);
+}
+
+void publishHubState() {
+  if (!MQTT_Client.connected()) return;
+  StaticJsonDocument<128> doc;
+  doc["panelCount"] = deviceCount;
+  String payload;
+  serializeJson(doc, payload);
+  MQTT_Client.publish("tigo/server/state", payload.c_str());
+}
+void publishDiscoverySensor(const String& addr, const String& deviceName, const String& key,
+                             const String& unit, const String& deviceClass, const String& stateClass) {
+  String uniqueId = "tigo_" + addr + "_" + key;
+  String topic = "homeassistant/sensor/" + uniqueId + "/config";
+
+  StaticJsonDocument<640> doc;
+  doc["name"]                 = key;
+  doc["unique_id"]            = uniqueId;
+  doc["state_topic"]          = "tigo/" + addr + "/state";
+  doc["value_template"]       = "{{ value_json." + key + " }}";
+  if (unit != "")        doc["unit_of_measurement"] = unit;
+  if (deviceClass != "") doc["device_class"]        = deviceClass;
+  if (stateClass != "")  doc["state_class"]         = stateClass;
+
+  JsonObject dev = doc.createNestedObject("device");
+  JsonArray ids = dev.createNestedArray("identifiers");
+  ids.add("tigo_" + addr);
+  dev["name"]         = deviceName;
+  dev["manufacturer"] = "Tigo Energy";
+  dev["model"]        = "TS4-A-O";
+  dev["via_device"]   = "tigo_server";
+
+  String payload;
+  serializeJson(doc, payload);
+  MQTT_Client.publish(topic.c_str(), payload.c_str(), true); // retained
+}
+
+void publishDiscovery(int i) {
+  DeviceData& d = devices[i];
+  String longAddr = getLongAddress(d.addr);
+  String label    = getPanelLabel(longAddr);
+  String deviceName = "Tigo " + (label != "" ? label : d.addr);
+
+  publishDiscoverySensor(d.addr, deviceName, "watt", "W",  "power",       "measurement");
+  publishDiscoverySensor(d.addr, deviceName, "vin",  "V",  "voltage",     "measurement");
+  publishDiscoverySensor(d.addr, deviceName, "vout", "V",  "voltage",     "measurement");
+  publishDiscoverySensor(d.addr, deviceName, "amp",  "A",  "current",     "measurement");
+  publishDiscoverySensor(d.addr, deviceName, "temp", "°C", "temperature", "measurement");
+  publishDiscoverySensor(d.addr, deviceName, "rssi", "dB", "",            "measurement");
+}
+
+// Setzt alle Discovery-Flags zurück, z.B. nach Panel-Umbenennung, damit Namen aktualisiert werden
+void resetDiscoveryFlags() {
+  for (int i = 0; i < deviceCount; i++) {
+    devices[i].discoverySent = false;
+  }
+}
+
 void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
   if (type == WS_EVT_CONNECT) {
     WebSerial.printf("WebSocket client connected: %u\n", client->id());
@@ -250,7 +366,9 @@ void setup() {
   WebSerial.begin(&server);
   server.begin();
   MQTT_Client.setServer(MQTT_BROKER, 1883);
+  MQTT_Client.setBufferSize(1024);
   ArduinoOTA.setHostname(hostname);
+  ArduinoOTA.setPassword("Tigo$olar")
   ArduinoOTA.begin();
   SPIFFS.begin(true);
   loadNodeTable();
@@ -273,6 +391,7 @@ void loop() {
       WebSerial.println(WiFi.localIP());
       sprintf(address_complete, "%s%s%s", "TIGO/server/", WiFi.localIP().toString().c_str(),"/startup");
       MQTT_Client.publish(address_complete, "Hello");
+      publishHubDiscovery();
     }
   }
 
@@ -310,6 +429,8 @@ void loop() {
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;
     WebsocketSend();
+    publishMQTT();
+    publishHubState();
 
     // Auto-save NodeTable se modificata (debounce 30 secondi)
     static unsigned long lastAutoSave = 0;
@@ -593,7 +714,17 @@ void processPowerFrame(String frame) {
         break;
       }
     }
-    devices[deviceCount] = {pv_node_id, addr, voltage_in, voltage_out, duty_cycle, current_in, temperature, slot_counter_value, rssi, barcode, true};
+    devices[deviceCount].pv_node_id = pv_node_id;
+    devices[deviceCount].addr = addr;
+    devices[deviceCount].voltage_in = voltage_in;
+    devices[deviceCount].voltage_out = voltage_out;
+    devices[deviceCount].duty_cycle = duty_cycle;
+    devices[deviceCount].current_in = current_in;
+    devices[deviceCount].temperature = temperature;
+    devices[deviceCount].slot_counter = slot_counter_value;
+    devices[deviceCount].rssi = rssi;
+    devices[deviceCount].barcode = barcode;
+    devices[deviceCount].changed = true;
     deviceCount++;
   }
 }
@@ -775,5 +906,3 @@ void setupNTP() {
     delay(1000);
   }
 }
-
-
