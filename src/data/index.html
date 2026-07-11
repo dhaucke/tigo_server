@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -238,7 +238,7 @@
       margin-bottom: 8px;
     }
   </style>
-  <!-- ApexCharts da CDN; se non disponibile (LAN senza internet) le chart vengono nascoste -->
+  <!-- ApexCharts von CDN; falls nicht verfügbar (LAN ohne Internet) werden die Charts ausgeblendet -->
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 </head>
 <body>
@@ -246,35 +246,35 @@
   <nav>
     <div class="nav-links">
       <a href="/debug">🧠 Debug</a>
-      <a href="/panels">🔖 Pannelli</a>
+      <a href="/panels">🔖 Panels</a>
       <a href="/spiffs">💾 SPIFFS</a>
       <a href="#" class="danger"
-         onclick="if(confirm('Riavviare il dispositivo?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),5000))">
+         onclick="if(confirm('Gerät neu starten?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),5000))">
          🔁 Reboot
       </a>
     </div>
     <div class="ws-status">
       <span id="status-dot"></span>
-      <span id="status-label">Disconnected</span>
+      <span id="status-label">Getrennt</span>
     </div>
   </nav>
 
   <div id="summary">
     <div class="pill">
       <span class="pval" id="s-total">0</span>
-      <span class="plbl">Watt totali</span>
+      <span class="plbl">Watt gesamt</span>
     </div>
     <div class="pill c-green">
       <span class="pval" id="s-count">0</span>
-      <span class="plbl">Moduli</span>
+      <span class="plbl">Module</span>
     </div>
     <div class="pill c-blue">
       <span class="pval" id="s-avgvin">—</span>
-      <span class="plbl">Vin medio</span>
+      <span class="plbl">Vin ⌀</span>
     </div>
     <div class="pill c-blue">
       <span class="pval" id="s-avgtemp">—</span>
-      <span class="plbl">Temp media</span>
+      <span class="plbl">Temp ⌀</span>
     </div>
   </div>
 
@@ -283,11 +283,11 @@
   <!-- Charts -->
   <div class="charts-row" id="charts-row" style="margin-top:16px">
     <div class="chart-card">
-      <h3>Potenza totale — ultimi 60 campioni</h3>
+      <h3>Gesamtleistung — letzte 60 Messwerte</h3>
       <div id="chart-power"></div>
     </div>
     <div class="chart-card">
-      <h3>Potenza per pannello (W attuale)</h3>
+      <h3>Leistung pro Panel (aktuelle W)</h3>
       <div id="chart-panels"></div>
     </div>
   </div>
@@ -298,8 +298,8 @@
     const modules   = {};   // id → { el, lastUpdate }
     const data_map  = {};   // id → last data object
 
-    const MAX_WATT = 400;   // adatta al tuo impianto
-    const STALE_MS = 90000; // ms senza aggiornamento → card opaca
+    const MAX_WATT = 400;   // an deine Anlage anpassen
+    const STALE_MS = 90000; // ms ohne Update → Karte wird ausgegraut
 
     // grey → amber → green
     function wattColor(w) {
@@ -333,7 +333,7 @@
             <span class="mv blue" id="vout-${key}">—</span>
           </div>
           <div class="metric">
-            <span class="ml">Corrente</span>
+            <span class="ml">Strom</span>
             <span class="mv" id="amp-${key}">—</span>
           </div>
           <div class="metric">
@@ -367,7 +367,7 @@
     };
     socket.onclose = () => {
       document.getElementById('status-dot').classList.remove('on');
-      document.getElementById('status-label').textContent = 'Disconnected – reconnecting…';
+      document.getElementById('status-label').textContent = 'Getrennt – verbinde neu…';
       setTimeout(() => location.reload(), 5000);
     };
 
@@ -375,7 +375,7 @@
       try {
         const list = JSON.parse(event.data);
         list.forEach(d => {
-          // Chiave stabile = addr corto (non cambia anche se assegni etichetta)
+          // Stabiler Schlüssel = kurze Addr (ändert sich nicht, auch wenn du eine Bezeichnung vergibst)
           const key = d.addr || d.id || 'mod#NA';
           let entry = modules[key];
           if (!entry) entry = createCard(key);
@@ -384,7 +384,7 @@
           entry.lastUpdate   = Date.now();
           entry.el.classList.remove('stale');
 
-          // Etichetta visualizzata: panel > barcode > addr
+          // Angezeigte Bezeichnung: panel > barcode > addr
           const displayName = d.panel || d.barcode || key;
           const g = s => document.getElementById(s + key);
           g('mid-').textContent  = displayName;
@@ -421,7 +421,7 @@
       cards.forEach(c => container.appendChild(c));
     }
 
-    // segna le card "stale" ogni 10 s
+    // markiert Karten alle 10 s als "veraltet"
     setInterval(() => {
       const now = Date.now();
       Object.values(modules).forEach(m => {
@@ -451,7 +451,7 @@
 
     const chartPowerOpts = {
       chart: { ...CHART_DARK, type: 'area', height: 180, animations: { enabled: true, easing: 'linear', dynamicAnimation: { speed: 800 } } },
-      series: [{ name: 'Totale W', data: [] }],
+      series: [{ name: 'Gesamt W', data: [] }],
       colors: ['#f0a500'],
       fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 90] } },
       stroke: { curve: 'smooth', width: 2 },
@@ -462,7 +462,7 @@
       dataLabels: { enabled: false }
     };
 
-    // Fix #3: inizializza le chart solo se ApexCharts è disponibile (CDN offline → degradazione graceful)
+    // Fix #3: initialisiert die Charts nur, wenn ApexCharts verfügbar ist (CDN offline → graceful degradation)
     let chartPower  = null;
     let chartPanels = null;
 
@@ -486,13 +486,13 @@
       chartPanels = new ApexCharts(document.getElementById('chart-panels'), chartPanelsOpts);
       chartPanels.render();
     } else {
-      // CDN non raggiungibile: nasconde la sezione chart per evitare elementi vuoti
+      // CDN nicht erreichbar: blendet den Chart-Bereich aus, um leere Elemente zu vermeiden
       const row = document.getElementById('charts-row');
       if (row) {
         row.style.display = 'none';
         const msg = document.createElement('p');
         msg.style.cssText = 'color:var(--muted);font-size:.8rem;margin-top:8px';
-        msg.textContent = '⚠ Grafici non disponibili (libreria ApexCharts non caricata).';
+        msg.textContent = '⚠ Diagramme nicht verfügbar (ApexCharts-Bibliothek nicht geladen).';
         row.parentNode.insertBefore(msg, row.nextSibling);
       }
     }
@@ -506,13 +506,13 @@
 
     // called after every WS message
     function updateCharts() {
-      if (!chartPower || !chartPanels) return; // Fix #3: chart non disponibili
+      if (!chartPower || !chartPanels) return; // Fix #3: Charts nicht verfügbar
       // Chart 1 — total power point
       const vals = Object.values(data_map);
       const tot = vals.reduce((s,d) => s + (d.watt||0), 0);
       powerHistory.push({ x: Date.now(), y: tot });
       if (powerHistory.length > MAX_HIST) powerHistory.shift();
-      chartPower.updateSeries([{ name: 'Totale W', data: [...powerHistory] }], false);
+      chartPower.updateSeries([{ name: 'Gesamt W', data: [...powerHistory] }], false);
 
       // Chart 2 — per panel sorted by label/id
       const sorted = vals.slice().sort((a,b) => {
