@@ -66,9 +66,11 @@ Liest den RS-485-Bus (TAP-Protokoll) aus und stellt ein Web-Dashboard, WebSocket
 
 | Datei | Beschreibung |
 |---|---|
-| `index.html` | Web-Dashboard |
+| `index.html` | Web-Dashboard (mit eingebautem DE/EN-Umschalter) |
 | `nodetable.json` | Zuordnung Kurzadresse ↔ Long-Address (automatisch generiert) |
 | `panel_map.json` | Zuordnung Long-Address ↔ Panel-Bezeichnung (verwaltet über `/panels`) |
+
+**Hinweis:** `lang.h` gehört **nicht** auf SPIFFS — sie liegt im Arduino-Sketch-Ordner neben `TigoServer.ino` und wird mit einkompiliert (siehe [Mehrsprachigkeit](#-mehrsprachigkeit-deen)).
 
 ---
 
@@ -86,6 +88,30 @@ Die Long-Address bleibt weiterhin in den Feldern `barcode` und `longaddr` verfü
 Die `loop()` prüft in jedem Zyklus: Wenn `NodeTable_changed == true` ist und ≥ 30 s
 seit der letzten Speicherung vergangen sind → wird `saveNodeTable()` aufgerufen und das Flag zurückgesetzt.
 Manuelles Speichern ist über `/debug` → Button **NodeTable jetzt speichern** möglich.
+
+---
+
+## 🌐 Mehrsprachigkeit (DE/EN)
+
+Das Projekt unterstützt Deutsch und Englisch über zwei unterschiedliche Mechanismen, je nachdem ob der Text zur Compile-Zeit (`webserver.ino`) oder zur Laufzeit (`index.html`) feststeht.
+
+### `/debug`, `/panels`, `/spiffs` — Compile-Time-Switch
+
+Diese Seiten werden im C++-Code von `webserver.ino` erzeugt. Die Sprache wird in **`lang.h`** festgelegt und beim Kompilieren fest eingebaut — es landet dabei nur die gewählte Sprache im Flash-Speicher, die andere nimmt keinen zusätzlichen Platz weg.
+
+**`lang.h`** muss im selben Ordner wie `TigoServer.ino` und `webserver.ino` liegen. Sprache umschalten:
+```cpp
+#define LANG_DE
+// #define LANG_EN   // diese Zeile stattdessen aktivieren für Englisch
+```
+Danach **neu kompilieren und flashen** (per USB oder OTA) — ein reiner Dateiupload über `/spiffs` reicht hier nicht, da die Texte im Programmcode stecken.
+
+### Hauptdashboard (`/`) — Laufzeit-Umschalter
+
+Die `index.html` liegt als reine Datei auf SPIFFS und wird nicht mitkompiliert. Hier läuft die Sprachumschaltung stattdessen über einen **🌐 EN/DE-Button** oben rechts in der Navigation:
+- Umschalten erfolgt sofort im Browser, ohne Neuladen der Seite
+- Die Auswahl wird im `localStorage` des Browsers gespeichert und bleibt beim nächsten Besuch erhalten
+- Kein Neuflashen nötig — ein normaler Datei-Upload der `index.html` über `/spiffs` reicht
 
 ---
 
