@@ -1,4 +1,4 @@
-// Escape HTML-special chars per prevenire XSS (Fix #8/#9/#10)
+// Escaped HTML-Sonderzeichen zur XSS-Verhinderung (Fix #8/#9/#10)
 String htmlEscape(const String& s) {
   String out;
   out.reserve(s.length() + 16);
@@ -16,7 +16,7 @@ String htmlEscape(const String& s) {
   return out;
 }
 
-// Valida che una stringa contenga solo caratteri sicuri per etichette/nomi file
+// Prüft, ob ein String nur sichere Zeichen für Bezeichnungen/Dateinamen enthält
 bool isSafeLabel(const String& s) {
   if (s.length() == 0 || s.length() > 20) return false;
   for (size_t i = 0; i < s.length(); i++) {
@@ -42,23 +42,23 @@ void setupWebserver() {
   server.addHandler(&ws);
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
-  // Elenco file SPIFFS
+  // SPIFFS-Dateiliste
   server.on("/spiffs", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/html", generateFileListHTML());
   });
 
-  // Gestione pannelli
+  // Panel-Verwaltung
   server.on("/panel_set", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (request->hasParam("longAddress", true) && request->hasParam("label", true)) {
       String la  = request->getParam("longAddress", true)->value();
       String lbl = request->getParam("label", true)->value();
       la.trim(); lbl.trim();
-      // Fix #9: valida che label contenga solo caratteri sicuri
+      // Fix #9: prüft, dass Bezeichnung nur sichere Zeichen enthält
       if (!isSafeLabel(lbl)) {
-        request->send(400, "text/plain", "Etichetta non valida: usare solo lettere, cifre, - _ . spazio (max 20 char)");
+        request->send(400, "text/plain", "Ungültige Bezeichnung: nur Buchstaben, Ziffern, - _ . Leerzeichen (max. 20 Zeichen)");
         return;
       }
-      // Aggiorna se esiste già, altrimenti aggiungi
+      // Aktualisiert, falls schon vorhanden, sonst hinzufügen
       bool found = false;
       for (int i = 0; i < panelMap_count; i++) {
         if (panelMap[i].longAddress == la) {
@@ -72,6 +72,7 @@ void setupWebserver() {
         panelMap_count++;
       }
       savePanelMap();
+      resetDiscoveryFlags();
     }
     request->redirect("/panels");
   });
@@ -93,7 +94,7 @@ void setupWebserver() {
 
   handleFileUpload();
 
-  // Eliminazione file
+  // Datei löschen
   server.on("/delete", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (request->hasParam("file")) {
       String fileToDelete = request->getParam("file")->value();
@@ -101,52 +102,51 @@ void setupWebserver() {
         if (SPIFFS.remove(fileToDelete)) {
           request->redirect("/spiffs");
         } else {
-          request->send(500, "text/plain", "Error deleting file");
+          request->send(500, "text/plain", "Fehler beim Löschen der Datei");
         }
       } else {
-        request->send(404, "text/plain", "File not found");
+        request->send(404, "text/plain", "Datei nicht gefunden");
       }
     } else {
-      request->send(400, "text/plain", "Missing parameter: file");
+      request->send(400, "text/plain", "Fehlender Parameter: file");
     }
   });
 
-  // Download file — Fix #1: usa request->send(SPIFFS) che gestisce il ciclo
-  // di vita del File internamente, senza rischi di memory leak in caso di
-  // disconnessione anticipata del client.
+  // Datei-Download — Fix #1: nutzt request->send(SPIFFS), das den Lebenszyklus
+  // der File-Objekte intern verwaltet, ohne Memory-Leak-Risiko bei vorzeitiger
+  // Client-Trennung.
   server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!request->hasParam("file")) {
-      request->send(400, "text/plain", "Missing parameter: file");
+      request->send(400, "text/plain", "Fehlender Parameter: file");
       return;
     }
     String filePath = request->getParam("file")->value();
     if (!SPIFFS.exists(filePath)) {
-      request->send(404, "text/plain", "File not found");
+      request->send(404, "text/plain", "Datei nicht gefunden");
       return;
     }
     request->send(SPIFFS, filePath, "application/octet-stream", true /*download*/);
   });
 
-  // Reboot
+  // Neustart
   server.on("/reboot", HTTP_POST, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "♻️ Rebooting ESP32...");
+    request->send(200, "text/plain", "♻️ ESP32 wird neu gestartet...");
     request->client()->close();
     delay(100);
     ESP.restart();
   });
 
-  // Salva NodeTable
+  // NodeTable speichern
   server.on("/save", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "Saving NodeTable...");
-    delay(100);
     saveNodeTable();
     NodeTable_changed = false;
-    WebSerial.println("✅ NodeTable saved via /save endpoint");
+    WebSerial.println("✅ NodeTable über /save-Endpunkt gespeichert");
+    request->redirect("/debug");
   });
 
-  // Gestione 404
+  // 404-Behandlung
   server.onNotFound([](AsyncWebServerRequest *request) {
-    request->send(404, "text/plain", "404: Not Found");
+    request->send(404, "text/plain", "404: Nicht gefunden");
   });
 }
 
@@ -181,7 +181,7 @@ String generateFileListHTML() {
   float totalKB   = total  / 1024.0;
   float usedPct   = total  > 0 ? (used * 100.0 / total) : 0;
 
-  String html = "<!DOCTYPE html><html lang='en'><head>"
+  String html = "<!DOCTYPE html><html lang='de'><head>"
     "<meta charset='UTF-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>SPIFFS · TigoServer</title>"
@@ -221,15 +221,15 @@ String generateFileListHTML() {
   html += "<nav>"
     "<a href='/'>🏠 Home</a>"
     "<a href='/debug'>🧠 Debug</a>"
-    "<a href='/panels'>🔖 Pannelli</a>"
+    "<a href='/panels'>🔖 Panels</a>"
     "<a href='/spiffs'>💾 SPIFFS</a>"
-    "<a href='#' class='danger' onclick=\"if(confirm('Riavviare?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),4000))\">🔁 Reboot</a>"
+    "<a href='#' class='danger' onclick=\"if(confirm('Neu starten?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),4000))\">🔁 Reboot</a>"
     "</nav>";
 
-  // Tabella file
+  // Dateitabelle
   html += "<div class='card'>";
-  html += "<h2>File</h2>";
-  html += "<table><thead><tr><th>Nome</th><th>Dimensione</th><th></th></tr></thead><tbody>";
+  html += "<h2>Dateien</h2>";
+  html += "<table><thead><tr><th>Name</th><th>Größe</th><th></th></tr></thead><tbody>";
 
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
@@ -237,7 +237,7 @@ String generateFileListHTML() {
   while (file) {
     hasFiles = true;
     String fname = fixPath(file.name());
-    String fnameEsc = htmlEscape(fname); // Fix #8: escapa per prevenire XSS
+    String fnameEsc = htmlEscape(fname); // Fix #8: escaped zur XSS-Verhinderung
     size_t fsize  = file.size();
     html += "<tr>";
     html += "<td class='fname'>" + fnameEsc + "</td>";
@@ -245,31 +245,31 @@ String generateFileListHTML() {
     html += "<td style='white-space:nowrap'>"
             "<a class='btn btn-dl' href='/download?file=" + urlEncode(fname) + "'>⬇ Download</a> "
             "<a class='btn btn-del' href='/delete?file=" + urlEncode(fname) + "' "
-            "onclick=\"return confirm('Eliminare &quot;" + fnameEsc + "&quot;?')\">&#x2715; Elimina</a>";
+            "onclick=\"return confirm('&quot;" + fnameEsc + "&quot; löschen?')\">&#x2715; Löschen</a>";
     html += "</td></tr>";
     file = root.openNextFile();
   }
-  if (!hasFiles) html += "<tr><td colspan='3' style='color:var(--muted);text-align:center;padding:20px'>Nessun file</td></tr>";
+  if (!hasFiles) html += "<tr><td colspan='3' style='color:var(--muted);text-align:center;padding:20px'>Keine Dateien</td></tr>";
   html += "</tbody></table></div>";
 
-  // Storage
+  // Speicher
   html += "<div class='card'>";
-  html += "<h2>Storage</h2>";
+  html += "<h2>Speicher</h2>";
   html += "<div class='bar-wrap'><div class='bar' style='width:" + String(usedPct, 0) + "%'></div></div>";
   html += "<div class='stat-row'>";
-  html += "<span><b>" + String(usedPct, 0) + "%</b> usato</span>";
+  html += "<span><b>" + String(usedPct, 0) + "%</b> belegt</span>";
   html += "<span><b>" + String(usedKB, 1) + " KB</b> / " + String(totalKB, 1) + " KB</span>";
-  html += "<span>liberi: <b>" + String(freeBytes / 1024.0, 1) + " KB</b></span>";
-  html += "<span>RAM libera: <b>" + String(freeHeap / 1024) + " KB</b></span>";
+  html += "<span>frei: <b>" + String(freeBytes / 1024.0, 1) + " KB</b></span>";
+  html += "<span>freier RAM: <b>" + String(freeHeap / 1024) + " KB</b></span>";
   html += "</div></div>";
 
   // Upload
   html += "<div class='card'>";
-  html += "<h2>Carica file</h2>";
+  html += "<h2>Datei hochladen</h2>";
   html += "<form method='POST' action='/save_upload' enctype='multipart/form-data'>";
-  html += "<label>Seleziona un file da caricare su SPIFFS:</label>";
+  html += "<label>Datei zum Hochladen auf SPIFFS auswählen:</label>";
   html += "<input type='file' name='upload'>";
-  html += "<button class='btn-up' type='submit'>⬆ Carica</button>";
+  html += "<button class='btn-up' type='submit'>⬆ Hochladen</button>";
   html += "</form></div>";
 
   html += "</body></html>";
@@ -281,10 +281,10 @@ String generateFileListHTML() {
 void handlePanelsPage() {
   server.on("/panels", HTTP_GET, [](AsyncWebServerRequest *request) {
 
-    String h = "<!DOCTYPE html><html lang='en'><head>"
+    String h = "<!DOCTYPE html><html lang='de'><head>"
       "<meta charset='UTF-8'>"
       "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-      "<title>Pannelli · TigoServer</title>"
+      "<title>Panels · TigoServer</title>"
       "<style>"
       "*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}"
       ":root{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2e2e2e;--accent:#f0a500;--green:#4caf50;--blue:#42a5f5;--red:#ef5350;--text:#e0e0e0;--muted:#777;--radius:12px}"
@@ -316,21 +316,21 @@ void handlePanelsPage() {
     h += "<nav>"
       "<a href='/'>🏠 Home</a>"
       "<a href='/debug'>🧠 Debug</a>"
-      "<a href='/panels'>🔖 Pannelli</a>"
+      "<a href='/panels'>🔖 Panels</a>"
       "<a href='/spiffs'>💾 SPIFFS</a>"
-      "<a href='#' class='danger' onclick=\"if(confirm('Riavviare?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),4000))\">🔁 Reboot</a>"
+      "<a href='#' class='danger' onclick=\"if(confirm('Neu starten?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),4000))\">🔁 Reboot</a>"
       "</nav>";
 
-    // Tabella nodi noti (da NodeTable) con etichette
+    // Tabelle bekannter Knoten (aus NodeTable) mit Bezeichnungen
     h += "<div class='card'>";
-    h += "<h2>Associazione Pannelli (&nbsp;" + String(NodeTable_count) + "&nbsp; nodi)</h2>";
-    h += "<p class='note' style='margin-bottom:12px'>Assegna un'etichetta (es. A4) al long address di ogni pannello. "
-         "L'etichetta viene trasmessa via WebSocket nel campo <code style='color:var(--blue)'>panel</code>.</p>";
+    h += "<h2>Panel-Zuordnung (&nbsp;" + String(NodeTable_count) + "&nbsp; Knoten)</h2>";
+    h += "<p class='note' style='margin-bottom:12px'>Weise jedem Panel-Long-Address eine Bezeichnung zu (z.B. A4). "
+         "Die Bezeichnung wird per WebSocket im Feld <code style='color:var(--blue)'>panel</code> übertragen.</p>";
 
     if (NodeTable_count == 0) {
-      h += "<p style='color:var(--muted);padding:16px'>Nessun nodo in NodeTable. Attendi che i pannelli si connettano.</p>";
+      h += "<p style='color:var(--muted);padding:16px'>Kein Knoten in NodeTable. Warte, bis sich die Panels verbinden.</p>";
     } else {
-      h += "<table><thead><tr><th>#</th><th>Long Address</th><th>Addr</th><th>Etichetta attuale</th><th>Imposta</th><th></th></tr></thead><tbody>";
+      h += "<table><thead><tr><th>#</th><th>Long Address</th><th>Addr</th><th>Aktuelle Bezeichnung</th><th>Festlegen</th><th></th></tr></thead><tbody>";
       for (int i = 0; i < NodeTable_count; i++) {
         String la  = NodeTable[i].longAddress;
         String sa  = NodeTable[i].addr;
@@ -342,18 +342,18 @@ void handlePanelsPage() {
         if (lbl != "") {
           h += "<td class='lbl'>" + lbl + "</td>";
         } else {
-          h += "<td class='lbl-empty'>non assegnato</td>";
+          h += "<td class='lbl-empty'>nicht zugewiesen</td>";
         }
-        // Form set
+        // Formular festlegen
         h += "<td><form method='POST' action='/panel_set' style='display:flex;gap:6px;align-items:center'>"
              "<input type='hidden' name='longAddress' value='" + la + "'>"
-             "<input type='text' name='label' placeholder='es. A4' value='" + lbl + "' maxlength='10'>"
-             "<button class='btn btn-save' type='submit'>✓ Salva</button>"
+             "<input type='text' name='label' placeholder='z.B. A4' value='" + lbl + "' maxlength='10'>"
+             "<button class='btn btn-save' type='submit'>✓ Speichern</button>"
              "</form></td>";
-        // Delete
+        // Löschen
         if (lbl != "") {
           h += "<td><a class='btn btn-del' href='/panel_delete?longAddress=" + urlEncode(la) + "' "
-               "onclick=\"return confirm('Rimuovere etichetta &quot;" + lbl + "&quot;?')\">× Rimuovi</a></td>";
+               "onclick=\"return confirm('Bezeichnung &quot;" + lbl + "&quot; entfernen?')\">× Entfernen</a></td>";
         } else {
           h += "<td></td>";
         }
@@ -363,13 +363,13 @@ void handlePanelsPage() {
     }
     h += "</div>";
 
-    // Mostra lo stato del mapping corrente (pannelli mappati)
+    // Zeigt den Status des aktuellen Mappings (zugeordnete Panels)
     h += "<div class='card'>";
-    h += "<h2>Mapping salvato (&nbsp;" + String(panelMap_count) + "&nbsp; voci)</h2>";
+    h += "<h2>Gespeicherte Zuordnung (&nbsp;" + String(panelMap_count) + "&nbsp; Einträge)</h2>";
     if (panelMap_count == 0) {
-      h += "<p style='color:var(--muted);padding:8px'>Nessun mapping salvato.</p>";
+      h += "<p style='color:var(--muted);padding:8px'>Keine Zuordnung gespeichert.</p>";
     } else {
-      h += "<table><thead><tr><th>Etichetta</th><th>Long Address</th><th></th></tr></thead><tbody>";
+      h += "<table><thead><tr><th>Bezeichnung</th><th>Long Address</th><th></th></tr></thead><tbody>";
       for (int i = 0; i < panelMap_count; i++) {
         String lblEsc = htmlEscape(panelMap[i].label);      // Fix #9
         String laEsc  = htmlEscape(panelMap[i].longAddress); // Fix #9
@@ -377,7 +377,7 @@ void handlePanelsPage() {
         h += "<td class='lbl'>" + lblEsc + "</td>";
         h += "<td class='la'>" + laEsc + "</td>";
         h += "<td><a class='btn btn-del' href='/panel_delete?longAddress=" + urlEncode(panelMap[i].longAddress) + "' "
-             "onclick=\"return confirm('Rimuovere?')\">×</a></td>";
+             "onclick=\"return confirm('Entfernen?')\">×</a></td>";
         h += "</tr>";
       }
       h += "</tbody></table>";
@@ -392,7 +392,7 @@ void handlePanelsPage() {
 void handleDebugPage() {
   server.on("/debug", HTTP_GET, [](AsyncWebServerRequest *request){
 
-    String h = "<!DOCTYPE html><html lang='en'><head>"
+    String h = "<!DOCTYPE html><html lang='de'><head>"
       "<meta charset='UTF-8'>"
       "<meta name='viewport' content='width=device-width,initial-scale=1'>"
       "<title>Debug · TigoServer</title>"
@@ -423,47 +423,47 @@ void handleDebugPage() {
     h += "<nav>"
       "<a href='/'>🏠 Home</a>"
       "<a href='/debug'>🧠 Debug</a>"
-      "<a href='/panels'>🔖 Pannelli</a>"
+      "<a href='/panels'>🔖 Panels</a>"
       "<a href='/spiffs'>💾 SPIFFS</a>"
-      "<a href='#' class='danger' onclick=\"if(confirm('Riavviare?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),4000))\">🔁 Reboot</a>"
+      "<a href='#' class='danger' onclick=\"if(confirm('Neu starten?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),4000))\">🔁 Reboot</a>"
       "</nav>";
 
-    // Helper: ricava la label pannello dato l'addr del device
+    // Ermittelt die Panel-Bezeichnung anhand der Geräte-Adresse
     auto getPanelLabel = [](const String& addr) -> String {
-      // 1) trova longAddress in NodeTable
+      // 1) longAddress in NodeTable suchen
       String la = "";
       for (int k = 0; k < NodeTable_count; k++) {
         if (NodeTable[k].addr == addr) { la = NodeTable[k].longAddress; break; }
       }
       if (la.isEmpty()) return "";
-      // 2) cerca in panelMap
+      // 2) in panelMap suchen
       for (int k = 0; k < panelMap_count; k++) {
         if (panelMap[k].longAddress == la) return panelMap[k].label;
       }
       return "";
     };
 
-    // Ordina gli indici dei device per label pannello, senza label in fondo
+    // Sortiert die Geräteindizes nach Panel-Bezeichnung, ohne Bezeichnung ans Ende
     int order[100];
     for (int i = 0; i < deviceCount; i++) order[i] = i;
-    // bubble sort (deviceCount tipicamente piccolo)
+    // Bubble-Sort (deviceCount typischerweise klein)
     for (int a = 0; a < deviceCount - 1; a++) {
       for (int b = a + 1; b < deviceCount; b++) {
         String la = getPanelLabel(devices[order[a]].addr);
         String lb = getPanelLabel(devices[order[b]].addr);
-        // chi non ha label va dopo
+        // wer keine Bezeichnung hat, kommt ans Ende
         if (la.isEmpty() && !lb.isEmpty()) { int t = order[a]; order[a] = order[b]; order[b] = t; }
         else if (!la.isEmpty() && !lb.isEmpty() && lb < la) { int t = order[a]; order[a] = order[b]; order[b] = t; }
       }
     }
 
-    // Tabella dispositivi
+    // Gerätetabelle
     h += "<div class='card'>";
-    h += "<h2>Dispositivi Tigo (&nbsp;" + String(deviceCount) + "&nbsp;)</h2>";
+    h += "<h2>Tigo-Geräte (&nbsp;" + String(deviceCount) + "&nbsp;)</h2>";
     h += "<table><thead><tr>"
-      "<th>#</th><th>Pannello</th><th>Node ID</th><th>Addr</th>"
+      "<th>#</th><th>Panel</th><th>Node ID</th><th>Addr</th>"
       "<th>Vin</th><th>Vout</th><th>Duty</th>"
-      "<th>Corrente</th><th>Watt</th><th>Temp</th>"
+      "<th>Strom</th><th>Watt</th><th>Temp</th>"
       "<th>Slot</th><th>RSSI</th><th>Barcode</th>"
       "</tr></thead><tbody>";
 
@@ -489,11 +489,11 @@ void handleDebugPage() {
     }
     h += "</tbody></table></div>";
 
-    // Tabella NodeTable
+    // NodeTable-Tabelle
     h += "<div class='card'>";
     h += "<h2>Node Table (&nbsp;" + String(NodeTable_count) + "&nbsp;)</h2>";
     if (NodeTable_changed) {
-      h += "<div class='warn-box'>⚠️ NodeTable modificata e non ancora salvata</div>";
+      h += "<div class='warn-box'>⚠️ NodeTable geändert und noch nicht gespeichert</div>";
     }
     h += "<table><thead><tr><th>#</th><th>Addr</th><th>Long Address</th><th>Checksum</th></tr></thead><tbody>";
     for (int i = 0; i < NodeTable_count; i++) {
@@ -505,7 +505,7 @@ void handleDebugPage() {
       h += "</tr>";
     }
     h += "</tbody></table>";
-    h += "<br><a class='btn-save' href='/save'>💾 Salva NodeTable ora</a>";
+    h += "<br><a class='btn-save' href='/save'>💾 NodeTable jetzt speichern</a>";
     h += "</div>";
 
     h += "</body></html>";
@@ -526,16 +526,16 @@ void handleFileUpload() {
       if (!index) {
         spaceChecked = false;
         Serial.printf("Upload beginnt: %s\n", filename.c_str());
-        // Fix #8: valida il nome file — ammetti solo caratteri alfanumerici e . - _
+        // Fix #8: validiert Dateiname — nur alphanumerische Zeichen und . - _ erlaubt
         for (size_t ci = 0; ci < filename.length(); ci++) {
           char c = filename.charAt(ci);
           if (!isalnum(c) && c != '-' && c != '_' && c != '.') {
-            Serial.println("❌ Nome file non valido.");
+            Serial.println("❌ Ungültiger Dateiname.");
             return;
           }
         }
         if (filename.length() > 64) {
-          Serial.println("❌ Nome file troppo lungo.");
+          Serial.println("❌ Dateiname zu lang.");
           return;
         }
         String path = "/" + filename;
@@ -547,7 +547,7 @@ void handleFileUpload() {
 
       if (!spaceChecked) {
         if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < len) {
-          Serial.println("❌ Not enough space on SPIFFS.");
+          Serial.println("❌ Nicht genug Speicherplatz auf SPIFFS.");
           if (uploadFile) uploadFile.close();
           return;
         }
