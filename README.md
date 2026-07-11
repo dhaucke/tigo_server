@@ -48,7 +48,13 @@ Liest den RS-485-Bus (TAP-Protokoll) aus und stellt ein Web-Dashboard, WebSocket
 - 💾 **NodeTable** — automatische Speicherung mit 30 s Debounce (`/nodetable.json`)
 - 🔖 **Panel Map** — dauerhafte Zuordnung Long-Address → Bezeichnung (`/panel_map.json`)
 - 🕒 **NTP-Sync** — genaue Uhrzeit nach Synchronisierung
-- 🔁 **OTA** — Firmware-Update über das Netzwerk
+- 🔁 **OTA** — Firmware-Update über das Netzwerk (Partition Scheme mit zwei App-Slots erforderlich, siehe unten)
+- 📡 **MQTT mit Home-Assistant-Auto-Discovery**:
+  - Für jedes erkannte Panel wird automatisch ein Home-Assistant-Gerät mit 6 Sensoren angelegt (Leistung, Vin, Vout, Strom, Temperatur, Signal) — kein manuelles YAML in Home Assistant nötig
+  - State-Topic pro Panel: `tigo/<addr>/state` (stabil, ändert sich nicht bei Panel-Umbenennung)
+  - Discovery-Topic: `homeassistant/sensor/tigo_<addr>_<key>/config` (retained)
+  - Übergeordnetes Hub-Gerät "TigoServer", alle Panels per `via_device` verknüpft — sichtbar über die Geräteseite des Hubs in Home Assistant
+  - Beim Umbenennen eines Panels über `/panels` werden die Discovery-Nachrichten automatisch mit dem neuen Namen erneut gesendet
 - 📊 **Grafisches Dashboard**:
   - Flächendiagramm — Gesamtleistung im Zeitverlauf (letzte 60 Messwerte, im Speicher)
   - Horizontales Balkendiagramm — Momentanleistung pro Panel, Farbverlauf Weiß→Grün
@@ -104,8 +110,18 @@ Installieren über *Sketch → Bibliothek einbinden → Bibliotheken verwalten*:
 ### 3. Board-Konfiguration
 *Werkzeuge*:
 - **Board:** `ESP32 Dev Module` (oder S3-Variante)
-- **Partition Scheme:** `No OTA (1MB APP / 3MB SPIFFS)` — **für OTA-Nutzung stattdessen ein Schema mit zwei App-Partitionen wählen** (z. B. „Minimal SPIFFS (Large APPS with OTA)"), sonst schlägt der Netzwerk-Upload fehl
+- **Partition Scheme:** siehe Tabelle unten — die Wahl entscheidet, ob OTA überhaupt funktioniert und wie viel Platz für SPIFFS bleibt
 - **Upload Speed:** 921600 (bei Verbindungsabbrüchen auf 115200 reduzieren)
+
+| Partition Scheme | App-Slots | SPIFFS-Größe | OTA möglich? |
+|---|---|---|---|
+| `No OTA (1MB APP / 3MB SPIFFS)` | 1 | ~3 MB | ❌ Nein — nur ein App-Slot, OTA-Uploads schlagen mit Timeout fehl |
+| `Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)` | 1 | ~1,5 MB | ❌ Nein — ebenfalls nur ein App-Slot |
+| `Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)` | 2 | ~128 KB | ✅ Ja — empfohlen, wenn OTA genutzt werden soll |
+
+**Wichtig:** Die für dieses Projekt benötigten SPIFFS-Dateien (`index.html`, `nodetable.json`, `panel_map.json`) sind zusammen nur wenige KB groß — die 128 KB von `Minimal SPIFFS` reichen dafür problemlos aus.
+
+**⚠️ Beim Wechsel des Partition Scheme:** Die SPIFFS-Partition wird dabei neu angelegt, der bisherige Inhalt geht verloren. Vorher unbedingt über `/spiffs` alle Dateien herunterladen (insbesondere `nodetable.json` und `panel_map.json`, da deren Neuaufbau je nach Sendeintervall der CCA Stunden dauern kann) und nach dem Flashen mit neuem Schema wieder hochladen. Ein Partition-Scheme-Wechsel erfordert außerdem immer einen Flash per USB — OTA kann die Partitionstabelle selbst nicht ändern.
 
 ### 4. WLAN-Zugangsdaten
 In der Datei `TigoServer.ino` (ganz oben):
