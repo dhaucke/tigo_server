@@ -248,33 +248,33 @@
       <a href="/debug">🧠 Debug</a>
       <a href="/panels">🔖 Panels</a>
       <a href="/spiffs">💾 SPIFFS</a>
-      <a href="#" class="danger"
-         onclick="if(confirm('Gerät neu starten?'))fetch('/reboot',{method:'POST'}).then(()=>setTimeout(()=>location.reload(),5000))">
+      <a href="#" class="danger" id="reboot-link">
          🔁 Reboot
       </a>
+      <a href="#" id="lang-toggle" title="Language / Sprache">🌐 EN</a>
     </div>
     <div class="ws-status">
       <span id="status-dot"></span>
-      <span id="status-label">Getrennt</span>
+      <span id="status-label" data-i18n="disconnected">Getrennt</span>
     </div>
   </nav>
 
   <div id="summary">
     <div class="pill">
       <span class="pval" id="s-total">0</span>
-      <span class="plbl">Watt gesamt</span>
+      <span class="plbl" data-i18n="totalWatt">Watt gesamt</span>
     </div>
     <div class="pill c-green">
       <span class="pval" id="s-count">0</span>
-      <span class="plbl">Module</span>
+      <span class="plbl" data-i18n="modules">Module</span>
     </div>
     <div class="pill c-blue">
       <span class="pval" id="s-avgvin">—</span>
-      <span class="plbl">Vin ⌀</span>
+      <span class="plbl" data-i18n="avgVin">Vin ⌀</span>
     </div>
     <div class="pill c-blue">
       <span class="pval" id="s-avgtemp">—</span>
-      <span class="plbl">Temp ⌀</span>
+      <span class="plbl" data-i18n="avgTemp">Temp ⌀</span>
     </div>
   </div>
 
@@ -283,20 +283,103 @@
   <!-- Charts -->
   <div class="charts-row" id="charts-row" style="margin-top:16px">
     <div class="chart-card">
-      <h3>Gesamtleistung — letzte 60 Messwerte</h3>
+      <h3 data-i18n="chartPowerTitle">Gesamtleistung — letzte 60 Messwerte</h3>
       <div id="chart-power"></div>
     </div>
     <div class="chart-card">
-      <h3>Leistung pro Panel (aktuelle W)</h3>
+      <h3 data-i18n="chartPanelsTitle">Leistung pro Panel (aktuelle W)</h3>
       <div id="chart-panels"></div>
     </div>
   </div>
 
   <script>
+    // ─── i18n: Übersetzungswörterbuch ───────────────────────────────────────
+    const I18N = {
+      de: {
+        disconnected: 'Getrennt',
+        disconnectedReconnect: 'Getrennt – verbinde neu…',
+        live: 'Live',
+        totalWatt: 'Watt gesamt',
+        modules: 'Module',
+        avgVin: 'Vin ⌀',
+        avgTemp: 'Temp ⌀',
+        chartPowerTitle: 'Gesamtleistung — letzte 60 Messwerte',
+        chartPanelsTitle: 'Leistung pro Panel (aktuelle W)',
+        totalSeriesName: 'Gesamt W',
+        panelSeriesName: 'W',
+        current: 'Strom',
+        vin: 'Vin',
+        vout: 'Vout',
+        temp: 'Temp',
+        sn: 'SN:',
+        confirmReboot: 'Gerät neu starten?',
+        chartsUnavailable: '⚠ Diagramme nicht verfügbar (ApexCharts-Bibliothek nicht geladen).'
+      },
+      en: {
+        disconnected: 'Disconnected',
+        disconnectedReconnect: 'Disconnected – reconnecting…',
+        live: 'Live',
+        totalWatt: 'Total Watt',
+        modules: 'Modules',
+        avgVin: 'Vin avg',
+        avgTemp: 'Temp avg',
+        chartPowerTitle: 'Total power — last 60 samples',
+        chartPanelsTitle: 'Power per panel (current W)',
+        totalSeriesName: 'Total W',
+        panelSeriesName: 'W',
+        current: 'Current',
+        vin: 'Vin',
+        vout: 'Vout',
+        temp: 'Temp',
+        sn: 'SN:',
+        confirmReboot: 'Restart device?',
+        chartsUnavailable: '⚠ Charts not available (ApexCharts library not loaded).'
+      }
+    };
+
+    let currentLang = localStorage.getItem('tigoLang') || 'de';
+
+    function t(key) {
+      return I18N[currentLang][key] || I18N.de[key] || key;
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        el.textContent = t(key);
+      });
+      document.getElementById('lang-toggle').textContent =
+        currentLang === 'de' ? '🌐 EN' : '🌐 DE';
+    }
+
+    document.getElementById('lang-toggle').addEventListener('click', (e) => {
+      e.preventDefault();
+      currentLang = currentLang === 'de' ? 'en' : 'de';
+      localStorage.setItem('tigoLang', currentLang);
+      applyTranslations();
+      // Bereits gerenderte Karten neu beschriften:
+      Object.keys(modules).forEach(key => {
+        const cur = document.getElementById('ml-current-' + key);
+        if (cur) cur.textContent = t('current');
+        const sn = document.getElementById('sn-' + key);
+        if (sn) sn.textContent = t('sn');
+      });
+    });
+
+    document.getElementById('reboot-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      if (confirm(t('confirmReboot'))) {
+        fetch('/reboot', {method: 'POST'}).then(() => setTimeout(() => location.reload(), 5000));
+      }
+    });
+
+    applyTranslations();
+
     const socket    = new WebSocket(`ws://${location.host}/ws`);
     const container = document.getElementById('container');
     const modules   = {};   // id → { el, lastUpdate }
     const data_map  = {};   // id → last data object
+
 
     const MAX_WATT = 400;   // an deine Anlage anpassen
     const STALE_MS = 90000; // ms ohne Update → Karte wird ausgegraut
@@ -325,23 +408,23 @@
         <div class="wbar-wrap"><div class="wbar" id="wb-${key}"></div></div>
         <div class="metrics">
           <div class="metric">
-            <span class="ml">Vin</span>
+            <span class="ml">${t('vin')}</span>
             <span class="mv blue" id="vin-${key}">—</span>
           </div>
           <div class="metric">
-            <span class="ml">Vout</span>
+            <span class="ml">${t('vout')}</span>
             <span class="mv blue" id="vout-${key}">—</span>
           </div>
           <div class="metric">
-            <span class="ml">Strom</span>
+            <span class="ml ml-current" id="ml-current-${key}">${t('current')}</span>
             <span class="mv" id="amp-${key}">—</span>
           </div>
           <div class="metric">
-            <span class="ml">Temp</span>
+            <span class="ml">${t('temp')}</span>
             <span class="mv" id="temp-${key}">—</span>
           </div>
         </div>
-        <div class="barcode-row">SN: <span id="bc-${key}">—</span></div>
+        <div class="barcode-row"><span class="sn-label" id="sn-${key}">${t('sn')}</span> <span id="bc-${key}">—</span></div>
         <div class="mod-ts" id="ts-${key}"></div>
       `;
       el.dataset.label = key;
@@ -363,11 +446,11 @@
 
     socket.onopen = () => {
       document.getElementById('status-dot').classList.add('on');
-      document.getElementById('status-label').textContent = 'Live';
+      document.getElementById('status-label').textContent = t('live');
     };
     socket.onclose = () => {
       document.getElementById('status-dot').classList.remove('on');
-      document.getElementById('status-label').textContent = 'Getrennt – verbinde neu…';
+      document.getElementById('status-label').textContent = t('disconnectedReconnect');
       setTimeout(() => location.reload(), 5000);
     };
 
@@ -451,7 +534,7 @@
 
     const chartPowerOpts = {
       chart: { ...CHART_DARK, type: 'area', height: 180, animations: { enabled: true, easing: 'linear', dynamicAnimation: { speed: 800 } } },
-      series: [{ name: 'Gesamt W', data: [] }],
+      series: [{ name: t('totalSeriesName'), data: [] }],
       colors: ['#f0a500'],
       fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.02, stops: [0, 90] } },
       stroke: { curve: 'smooth', width: 2 },
@@ -473,7 +556,7 @@
       // --- Chart 2: per-panel bar chart ---
       const chartPanelsOpts = {
         chart: { ...CHART_DARK, type: 'bar', height: 180 },
-        series: [{ name: 'W', data: [] }],
+        series: [{ name: t('panelSeriesName'), data: [] }],
         colors: ['#42a5f5'],
         plotOptions: { bar: { horizontal: true, barHeight: '65%', borderRadius: 4, distributed: true } },
         legend: { show: false },
@@ -492,7 +575,7 @@
         row.style.display = 'none';
         const msg = document.createElement('p');
         msg.style.cssText = 'color:var(--muted);font-size:.8rem;margin-top:8px';
-        msg.textContent = '⚠ Diagramme nicht verfügbar (ApexCharts-Bibliothek nicht geladen).';
+        msg.textContent = t('chartsUnavailable');
         row.parentNode.insertBefore(msg, row.nextSibling);
       }
     }
@@ -512,7 +595,7 @@
       const tot = vals.reduce((s,d) => s + (d.watt||0), 0);
       powerHistory.push({ x: Date.now(), y: tot });
       if (powerHistory.length > MAX_HIST) powerHistory.shift();
-      chartPower.updateSeries([{ name: 'Gesamt W', data: [...powerHistory] }], false);
+      chartPower.updateSeries([{ name: t('totalSeriesName'), data: [...powerHistory] }], false);
 
       // Chart 2 — per panel sorted by label/id
       const sorted = vals.slice().sort((a,b) => {
@@ -524,7 +607,7 @@
       const watts  = sorted.map(d => d.watt || 0);
       const colors = watts.map(w => barColor(w));
       chartPanels.updateOptions({ xaxis: { categories: cats }, colors }, false, false);
-      chartPanels.updateSeries([{ name: 'W', data: watts }], false);
+      chartPanels.updateSeries([{ name: t('panelSeriesName'), data: watts }], false);
 
       // Adjust bar chart height based on number of panels
       const h = Math.max(160, sorted.length * 28 + 40);
