@@ -1,7 +1,9 @@
 # Tigo RS485 ESP32 Monitor
 
-Monitor in tempo reale per ottimizzatori solari Tigo, basato su ESP32.  
-Legge il bus RS-485 (protocollo TAP) e fornisce una dashboard web, WebSocket e persistenza su SPIFFS.
+Echtzeit-Monitor für Tigo-Solar-Optimierer auf Basis eines ESP32.
+Liest den RS-485-Bus (TAP-Protokoll) aus und stellt ein Web-Dashboard, WebSocket und Datenpersistenz über SPIFFS bereit.
+
+> **Hinweis:** Dies ist ein Fork von [Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server), der wiederum auf [tictactom/tigo_server](https://github.com/tictactom/tigo_server) basiert.
 
 <img src="images/home.png" alt="dashboard" width="1000"/>
 <img src="images/spiffs.png" alt="spiffs" width="1000"/>
@@ -10,24 +12,24 @@ Legge il bus RS-485 (protocollo TAP) e fornisce una dashboard web, WebSocket e p
 
 ## 🛠️ Hardware
 
-| Componente | Note |
+| Komponente | Hinweise |
 |---|---|
-| **ESP32 / ESP32-S3** | Flash minimo da 4 MB con partizione SPIFFS |
-| **Convertitore TTL→RS485** | MAX485 o simile |
-| **Regolatore 5 V** | Se alimentato dal bus RS-485 |
+| **ESP32 / ESP32-S3** | Mindestens 4 MB Flash mit SPIFFS-Partition |
+| **TTL→RS485-Konverter** | MAX485 oder ähnlich |
+| **5V-Regler** | Falls über den RS-485-Bus versorgt |
 
 ---
 
-## ⚙️ Funzionalità
+## ⚙️ Funktionen
 
-- 📡 **Lettura bus RS-485** (Tigo TAP/CCA, 38400 baud 8N1)
-- 🔍 **Parsing frame**: potenza (0x31), topologia (0x09), NodeTable (0x27)
-- 🌐 **WebServer integrato**:
-  - `/` – Dashboard live con grafici (ApexCharts) e card per modulo
-  - `/debug` – Tabella raw (tensione, corrente, temperatura, RSSI, …)
-  - `/panels` – Mappatura manuale longAddress → etichetta (es. A4)
-  - `/spiffs` – File manager (upload / download / elimina file SPIFFS)
-- 🔌 **WebSocket `/ws`** — aggiornamento real-time; payload per modulo:
+- 📡 **RS-485-Bus auslesen** (Tigo TAP/CCA, 38400 Baud 8N1)
+- 🔍 **Frame-Parsing**: Leistung (0x31), Topologie (0x09), NodeTable (0x27)
+- 🌐 **Integrierter Webserver**:
+  - `/` – Live-Dashboard mit Diagrammen (ApexCharts) und Karte pro Modul
+  - `/debug` – Rohdaten-Tabelle (Spannung, Strom, Temperatur, RSSI, …)
+  - `/panels` – Manuelle Zuordnung Long-Address → Bezeichnung (z. B. A4)
+  - `/spiffs` – Dateimanager (Hochladen/Herunterladen/Löschen von SPIFFS-Dateien)
+- 🔌 **WebSocket `/ws`** — Echtzeit-Update; Payload pro Modul:
   ```json
   {
     "id":       "A4",
@@ -43,121 +45,120 @@ Legge il bus RS-485 (protocollo TAP) e fornisce una dashboard web, WebSocket e p
     "rssi":     126
   }
   ```
-- 💾 **NodeTable** — salvataggio automatico con debounce 30 s (`/nodetable.json`)
-- 🔖 **Panel Map** — associazione persistente longAddress → etichetta (`/panel_map.json`)
-- 🕒 **NTP sync** — orario preciso alla sincronizzazione
-- 🔁 **OTA** — aggiornamento firmware via rete
-- 📊 **Dashboard grafica**:
-  - Grafico area — potenza totale nel tempo (ultimi 60 campioni, in-memory)
-  - Grafico a barre orizzontali — potenza istantanea per pannello, colorato W→verde
-  - Card per ogni modulo con barra di progresso, Vin/Vout, corrente, temperatura, RSSI
+- 💾 **NodeTable** — automatische Speicherung mit 30 s Debounce (`/nodetable.json`)
+- 🔖 **Panel Map** — dauerhafte Zuordnung Long-Address → Bezeichnung (`/panel_map.json`)
+- 🕒 **NTP-Sync** — genaue Uhrzeit nach Synchronisierung
+- 🔁 **OTA** — Firmware-Update über das Netzwerk
+- 📊 **Grafisches Dashboard**:
+  - Flächendiagramm — Gesamtleistung im Zeitverlauf (letzte 60 Messwerte, im Speicher)
+  - Horizontales Balkendiagramm — Momentanleistung pro Panel, Farbverlauf Weiß→Grün
+  - Karte pro Modul mit Fortschrittsbalken, Vin/Vout, Strom, Temperatur, RSSI
 
 ---
 
-## 📂 File SPIFFS
+## 📂 SPIFFS-Dateien
 
-| File | Descrizione |
+| Datei | Beschreibung |
 |---|---|
-| `index.html` | Dashboard web |
-| `nodetable.json` | Mapping addr corto ↔ longAddress (auto-generato) |
-| `panel_map.json` | Mapping longAddress ↔ etichetta pannello (gestito da `/panels`) |
+| `index.html` | Web-Dashboard |
+| `nodetable.json` | Zuordnung Kurzadresse ↔ Long-Address (automatisch generiert) |
+| `panel_map.json` | Zuordnung Long-Address ↔ Panel-Bezeichnung (verwaltet über `/panels`) |
 
 ---
 
-## 🔖 Mappatura pannelli
+## 🔖 Panel-Zuordnung
 
-Vai su `/panels`: ogni riga mostra il longAddress del modulo (es. `04C05B4000B1A688`).  
-Scrivi l'etichetta (es. `A4`) e clicca **Salva**.  
-Da quel momento il WebSocket trasmette `"panel": "A4"` e `"id": "A4"` per quel modulo.  
-Il longAddress rimane sempre disponibile nei campi `barcode` e `longaddr`.
-
----
-
-## 🔄 Salvataggio automatico NodeTable
-
-La `loop()` controlla ogni ciclo: se `NodeTable_changed == true` e sono passati ≥ 30 s  
-dall'ultimo salvataggio → chiama `saveNodeTable()` e resetta il flag.  
-Il salvataggio manuale è disponibile su `/debug` → bottone **Salva NodeTable ora**.
+Geh auf `/panels`: Jede Zeile zeigt die Long-Address des Moduls (z. B. `04C05B4000B1A688`).
+Trag die Bezeichnung ein (z. B. `A4`) und klick **Speichern**.
+Ab diesem Zeitpunkt überträgt der WebSocket `"panel": "A4"` und `"id": "A4"` für dieses Modul.
+Die Long-Address bleibt weiterhin in den Feldern `barcode` und `longaddr` verfügbar.
 
 ---
 
-## 🧰 Installazione (Arduino IDE)
+## 🔄 Automatische Speicherung der NodeTable
 
-### 1. Prerequisiti
+Die `loop()` prüft in jedem Zyklus: Wenn `NodeTable_changed == true` ist und ≥ 30 s
+seit der letzten Speicherung vergangen sind → wird `saveNodeTable()` aufgerufen und das Flag zurückgesetzt.
+Manuelles Speichern ist über `/debug` → Button **NodeTable jetzt speichern** möglich.
+
+---
+
+## 🧰 Installation (Arduino IDE)
+
+### 1. Voraussetzungen
 - **Arduino IDE 2.x**
-- Supporto schede ESP32:  
-  *File → Preferenze → URL aggiuntivi*:
+- ESP32-Board-Unterstützung:
+  *Datei → Voreinstellungen → Zusätzliche Boardverwalter-URLs*:
   ```
   https://espressif.github.io/arduino-esp32/package_esp32_index.json
   ```
-  Poi: *Strumenti → Scheda → Gestore schede → "esp32" → Installa*
+  Danach: *Werkzeuge → Board → Boardverwalter → "esp32" → Installieren*
 
-### 2. Librerie richieste
-Installa via *Sketch → Includi libreria → Gestisci librerie*:
+### 2. Benötigte Bibliotheken
+Installieren über *Sketch → Bibliothek einbinden → Bibliotheken verwalten*:
 - **ArduinoJson** (Benoit Blanchon)
 - **ESPAsyncWebServer** + **AsyncTCP**
 - **PubSubClient** (MQTT)
 - **WebSerial**
 
-### 3. Configurazione scheda
-*Strumenti*:
-- **Board:** `ESP32 Dev Module` (o variante S3)
-- **Partition Scheme:** `No OTA (1MB APP / 3MB SPIFFS)`
-- **Upload Speed:** 921600
+### 3. Board-Konfiguration
+*Werkzeuge*:
+- **Board:** `ESP32 Dev Module` (oder S3-Variante)
+- **Partition Scheme:** `No OTA (1MB APP / 3MB SPIFFS)` — **für OTA-Nutzung stattdessen ein Schema mit zwei App-Partitionen wählen** (z. B. „Minimal SPIFFS (Large APPS with OTA)"), sonst schlägt der Netzwerk-Upload fehl
+- **Upload Speed:** 921600 (bei Verbindungsabbrüchen auf 115200 reduzieren)
 
-### 4. Credenziali Wi-Fi
-Nel file `TigoServer.ino` (in cima):
+### 4. WLAN-Zugangsdaten
+In der Datei `TigoServer.ino` (ganz oben):
 ```cpp
-const char* ssid     = "TuaReteWiFi";
-const char* password = "TuaPassword";
+const char* ssid     = "DeinWLANName";
+const char* password = "DeinPasswort";
 ```
 
-### 5. Flash firmware
-1. Collega ESP32 via USB
-2. Clicca **→ Carica**
-3. Apri *Monitor Seriale* (115200 baud)
+### 5. Firmware flashen
+1. ESP32 per USB anschließen
+2. **→ Hochladen** klicken
+3. Serial Monitor öffnen (115200 Baud)
 
-### 6. Carica i file SPIFFS
-Installa il plugin **ESP32 Sketch Data Upload**:  
-→ [https://github.com/me-no-dev/arduino-esp32fs-plugin](https://github.com/me-no-dev/arduino-esp32fs-plugin)  
-Poi: *Strumenti → ESP32 Sketch Data Upload*
+### 6. SPIFFS-Dateien hochladen
+Plugin **ESP32 Sketch Data Upload** installieren:
+→ [https://github.com/me-no-dev/arduino-esp32fs-plugin](https://github.com/me-no-dev/arduino-esp32fs-plugin)
+Danach: *Werkzeuge → ESP32 Sketch Data Upload*
 
-### 7. Primo accesso
-Trova l'IP in Serial Monitor o nel router DHCP:
+### 7. Erster Zugriff
+IP-Adresse im Serial Monitor oder im Router-DHCP finden:
 ```
-http://<IP_ESP32>
+http://<ESP32-IP>
 ```
-- `/` — Dashboard + grafici
-- `/debug` — Dati raw + NodeTable
-- `/panels` — Mappatura etichette
-- `/spiffs` — File manager
+- `/` — Dashboard + Diagramme
+- `/debug` — Rohdaten + NodeTable
+- `/panels` — Bezeichnungs-Zuordnung
+- `/spiffs` — Dateimanager
 
 ---
 
-## ⚡ Schema di collegamento
+## ⚡ Verkabelungsschema
 
 <img src="images/esp32-rs485.png" alt="wiring" width="400"/>
 <img src="images/stepdown-5v.png" alt="stepdown" width="400"/>
 
-| RS-485 | ESP32 | Note |
+| RS-485 | ESP32 | Hinweis |
 |---|---|---|
 | RO → RX | GPIO 16 | RS-485 → ESP32 |
 | DI ← TX | GPIO 17 | ESP32 → RS-485 |
-| RE/DE | GND (LOW) | Modalità solo ricezione |
-| A / B | Bus TAP ↔ CCA | In parallelo |
-| 5 V / GND | Alimentazione condivisa | |
+| RE/DE | GND (LOW) | Nur-Empfangs-Modus |
+| A / B | Bus TAP ↔ CCA | Parallel angeschlossen |
+| 5 V / GND | Gemeinsame Versorgung | |
 
 ---
 
-## 📎 Crediti
+## 📎 Danksagung
 
-- Reverse engineering protocollo: [willglynn/taptap](https://github.com/willglynn/taptap)
-- Progetto originale: [tictactom/tigo_server](https://github.com/tictactom/tigo_server)
-- Questa fork aggiunge dashboard grafica, panel mapping, NodeTable persistente, pagine dark-theme.
+- Protokoll-Reverse-Engineering: [willglynn/taptap](https://github.com/willglynn/taptap)
+- Ursprüngliches Projekt: [tictactom/tigo_server](https://github.com/tictactom/tigo_server)
+- Vorlage dieses Forks: [Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) — fügt grafisches Dashboard, Panel-Mapping, dauerhafte NodeTable und Dark-Theme-Seiten hinzu.
 
 ---
 
-## 🔓 Licenza
+## 🔓 Lizenz
 
-MIT — libero adattamento per il proprio impianto.
-
+MIT — freie Anpassung für die eigene Anlage.
