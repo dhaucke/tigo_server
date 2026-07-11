@@ -145,10 +145,19 @@ IP-Adresse im Serial Monitor oder im Router-DHCP finden:
 ```
 http://<ESP32-IP>
 ```
-- `/` — Dashboard + Diagramme
+
+**⚠️ Wichtig — 404 beim allerersten Aufruf ist normal:** Direkt nach dem Flashen ist SPIFFS noch leer, es gibt keine `index.html` — der Aufruf von `http://<ESP32-IP>/` liefert deshalb zunächst **404: Not Found**. Das liegt daran, dass die `index.html` eine separate Datei ist, die nicht im Sketch-Code steckt, sondern eigenständig auf den SPIFFS-Speicher hochgeladen werden muss (siehe Schritt 6).
+
+So gehst du vor, wenn der 404-Fehler auftritt:
+1. Ruf stattdessen direkt `http://<ESP32-IP>/spiffs` auf — dieser Endpunkt funktioniert bereits ohne `index.html`, da er Teil des Sketches selbst ist
+2. Dort im Bereich **„Datei hochladen"** die `index.html` aus dem Repository auswählen und hochladen
+3. Anschließend `http://<ESP32-IP>/` erneut aufrufen — jetzt sollte das Dashboard erscheinen
+
+Danach stehen alle Seiten zur Verfügung:
+- `/` — Dashboard + Diagramme (erst nutzbar nach Upload der `index.html`)
 - `/debug` — Rohdaten + NodeTable
 - `/panels` — Bezeichnungs-Zuordnung
-- `/spiffs` — Dateimanager
+- `/spiffs` — Dateimanager (**von Anfang an nutzbar**, auch vor dem `index.html`-Upload)
 
 ---
 
