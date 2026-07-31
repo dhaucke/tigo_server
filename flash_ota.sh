@@ -5,10 +5,21 @@ set -euo pipefail
 
 IP="${1:?Usage: ./flash_ota.sh <ESP32-IP>}"
 FQBN="esp32:esp32:esp32"
-OTA_PASSWORD="Tigo\$olar"
 OTA_PORT=3232
 
 cd "$(dirname "$0")"
+
+SECRETS="TigoServer/secrets.h"
+if [ ! -f "$SECRETS" ]; then
+  echo "Fehlt: $SECRETS (siehe TigoServer/secrets.h.example)" >&2
+  exit 1
+fi
+OTA_PASSWORD="$(sed -n 's/.*OTA_PASSWORD[^"]*"\([^"]*\)".*/\1/p' "$SECRETS")"
+if [ -z "$OTA_PASSWORD" ]; then
+  echo "Konnte OTA_PASSWORD nicht aus $SECRETS lesen." >&2
+  exit 1
+fi
+
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 

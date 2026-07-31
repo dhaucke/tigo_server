@@ -9,14 +9,10 @@
 #include <ArduinoJson.h>
 #include <time.h>
 #include <esp_task_wdt.h>
+#include "secrets.h" // WLAN/MQTT/OTA-Zugangsdaten — siehe secrets.h.example
 
 const char* hostname = "TigoServer";
 const char* TZ_STRING = "CET-1CEST,M3.5.0/2,M10.5.0/3"; // Modifica per il tuo fuso orario
-const char* ssid = ""; //SSID
-const char* password = ""; //passwort
-const char* MQTT_BROKER = "192.168.x.x"; //MQTT Server IP
-const char* mqtt_user = "";
-const char* mqtt_pass = "";
 
 constexpr uint16_t POLYNOMIAL = 0x8408;  // Reversed polynomial (0x1021 reflected)
 constexpr size_t TABLE_SIZE = 256;
@@ -25,10 +21,7 @@ uint16_t CRC_TABLE[TABLE_SIZE];
 #define RX_PIN 16  // Define the RX pin
 #define TX_PIN 17  // Define the TX pin
 
-String incomingData = "";
-String completeFrame = "";
 char address_complete[50];
-char* address;
 
 void setupNTP();
 void setupWebserver();
@@ -133,13 +126,6 @@ char computeTigoCRC4(const char* hexString) {
 
 void processFrame(String frame);
 String removeEscapeSequences(const String& frame);
-
-void hexStringToBytes(const String& hexString, uint8_t* byteArray, size_t length) {
-  for (size_t i = 0; i < length; i++) {
-    String byteString = hexString.substring(i * 2, i * 2 + 2);
-    byteArray[i] = strtol(byteString.c_str(), NULL, 16);
-  }
-}
 
 // Function to generate CRC table
 void generateCRCTable() {
@@ -347,7 +333,15 @@ void initWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi ..");
+  unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
+    // Ohne Timeout wuerde das Geraet hier fuer immer haengen, falls WLAN beim
+    // Boot (z.B. nach einem Watchdog-Reboot oder Stromausfall) kurz down ist.
+    if (millis() - start > 30000) {
+      Serial.println("\nWLAN-Verbindung fehlgeschlagen, Neustart...");
+      ESP.restart();
+    }
+    esp_task_wdt_reset();
     Serial.print('.');
     delay(1000);
   }
@@ -359,24 +353,9 @@ void initWiFi() {
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  Serial1.begin(38400, SERIAL_8N1, RX_PIN, TX_PIN);
-  generateCRCTable();  // Generate the CRC lookup table
-  initWiFi();
-  setupNTP(); 
-  setupWebserver();
-  WebSerial.begin(&server);
-  server.begin();
-  MQTT_Client.setServer(MQTT_BROKER, 1883);
-  MQTT_Client.setBufferSize(1024);
-  ArduinoOTA.setHostname(hostname);
-  ArduinoOTA.setPassword("Tigo$olar");
-  ArduinoOTA.begin();
-  SPIFFS.begin(true);
-  loadNodeTable();
-  loadPanelMap();
 
-  // Task-Watchdog: reboottet automatisch, falls loop() mal >30s haengt,
-  // statt tagelang unbemerkt eingefroren zu bleiben.
+  // Task-Watchdog frueh aktivieren, damit auch der WLAN/NTP-Verbindungsaufbau
+  // unten abgesichert ist und nicht unbegrenzt haengen kann.
   esp_task_wdt_config_t wdtConfig = {
     .timeout_ms = 30000,
     .idle_core_mask = 0,
@@ -386,6 +365,22 @@ void setup() {
     esp_task_wdt_reconfigure(&wdtConfig);
   }
   esp_task_wdt_add(NULL);
+
+  Serial1.begin(38400, SERIAL_8N1, RX_PIN, TX_PIN);
+  generateCRCTable();  // Generate the CRC lookup table
+  initWiFi();
+  setupNTP();
+  setupWebserver();
+  WebSerial.begin(&server);
+  server.begin();
+  MQTT_Client.setServer(MQTT_BROKER, 1883);
+  MQTT_Client.setBufferSize(1024);
+  ArduinoOTA.setHostname(hostname);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.begin();
+  SPIFFS.begin(true);
+  loadNodeTable();
+  loadPanelMap();
 }
 
 void loop() {
@@ -404,7 +399,11 @@ void loop() {
   static bool frameStarted = false;
 
   if(WiFi.status() == WL_CONNECTED){
-    if(!MQTT_Client.connected()){
+    static unsigned long lastMqttAttempt = 0;
+    // Reconnect debouncen: sonst wird bei nicht erreichbarem Broker bei
+    // jedem loop()-Durchlauf (alle ~10ms) neu verbunden.
+    if(!MQTT_Client.connected() && (millis() - lastMqttAttempt > 5000)){
+      lastMqttAttempt = millis();
       MQTT_Client.connect(hostname, mqtt_user, mqtt_pass);
       WebSerial.println(WiFi.localIP());
       sprintf(address_complete, "%s%s%s", "TIGO/server/", WiFi.localIP().toString().c_str(),"/startup");
@@ -929,7 +928,15 @@ void setupNTP() {
   tzset();
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   struct tm timeinfo;
+  unsigned long start = millis();
+  // NTP ist nicht kritisch (nur fuer Zeitstempel) — nach Timeout einfach
+  // ohne Zeitsync weiterlaufen statt fuer immer zu haengen.
   while (!getLocalTime(&timeinfo)) {
+    if (millis() - start > 20000) {
+      Serial.println("NTP-Sync fehlgeschlagen, fahre ohne Zeitsync fort.");
+      return;
+    }
+    esp_task_wdt_reset();
     Serial.println("Sync NTP...");
     delay(1000);
   }

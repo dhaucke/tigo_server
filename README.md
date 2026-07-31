@@ -149,11 +149,23 @@ Installieren über *Sketch → Bibliothek einbinden → Bibliotheken verwalten*:
 
 **⚠️ Beim Wechsel des Partition Scheme:** Die SPIFFS-Partition wird dabei neu angelegt, der bisherige Inhalt geht verloren. Vorher unbedingt über `/spiffs` alle Dateien herunterladen (insbesondere `nodetable.json` und `panel_map.json`, da deren Neuaufbau je nach Sendeintervall der CCA Stunden dauern kann) und nach dem Flashen mit neuem Schema wieder hochladen. Ein Partition-Scheme-Wechsel erfordert außerdem immer einen Flash per USB — OTA kann die Partitionstabelle selbst nicht ändern.
 
-### 4. WLAN-Zugangsdaten
-In der Datei `TigoServer.ino` (ganz oben):
+### 4. Zugangsdaten (WLAN/MQTT/OTA)
+Zugangsdaten liegen **nicht** im Sketch selbst, sondern in `TigoServer/secrets.h` — diese Datei ist per `.gitignore` vom Commit ausgeschlossen.
+
+```
+cp TigoServer/secrets.h.example TigoServer/secrets.h
+```
+
+Danach in `TigoServer/secrets.h` die echten Werte eintragen:
 ```cpp
 const char* ssid     = "DeinWLANName";
-const char* password = "DeinPasswort";
+const char* password = "DeinWLANPasswort";
+
+const char* MQTT_BROKER = "192.168.x.x";
+const char* mqtt_user   = "";
+const char* mqtt_pass   = "";
+
+const char* OTA_PASSWORD = "changeme";
 ```
 
 ### 5. Firmware flashen
@@ -184,6 +196,18 @@ Danach stehen alle Seiten zur Verfügung:
 - `/debug` — Rohdaten + NodeTable
 - `/panels` — Bezeichnungs-Zuordnung
 - `/spiffs` — Dateimanager (**von Anfang an nutzbar**, auch vor dem `index.html`-Upload)
+
+---
+
+## 🔁 Spätere Updates per OTA (ohne USB)
+
+Sobald der ESP32 einmal mit `Minimal SPIFFS`-Partitionsschema läuft (siehe oben), reicht für Firmware-Updates das mitgelieferte Skript — kompiliert per [`arduino-cli`](https://arduino.github.io/arduino-cli/) und lädt per OTA hoch:
+
+```
+./flash_ota.sh <ESP32-IP>
+```
+
+Voraussetzung: `arduino-cli` mit ESP32-Boardpaket (`esp32:esp32`) und den in Schritt 2 genannten Bibliotheken installiert, sowie eine vorhandene `TigoServer/secrets.h` (siehe Schritt 4) — das OTA-Passwort wird daraus gelesen.
 
 ---
 

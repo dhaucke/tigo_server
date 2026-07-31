@@ -28,15 +28,6 @@ bool isSafeLabel(const String& s) {
   return true;
 }
 
-bool isSafeFilename(const String& s) {
-  if (s.length() == 0 || s.length() > 64) return false;
-  for (size_t i = 0; i < s.length(); i++) {
-    char c = s.charAt(i);
-    if (!isalnum(c) && c != '-' && c != '_' && c != '.' && c != '/') return false;
-  }
-  return true;
-}
-
 void setupWebserver() {
   handleDebugPage();
   handlePanelsPage();
