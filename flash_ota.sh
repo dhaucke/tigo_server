@@ -6,11 +6,17 @@ set -euo pipefail
 IP="${1:?Usage: ./flash_ota.sh <ESP32-IP>}"
 FQBN="esp32:esp32:esp32"
 OTA_PASSWORD="Tigo\$olar"
+OTA_PORT=3232
 
 cd "$(dirname "$0")"
+BUILD_DIR="$(mktemp -d)"
+trap 'rm -rf "$BUILD_DIR"' EXIT
 
 echo "==> Kompiliere..."
-arduino-cli compile --fqbn "$FQBN" TigoServer
+arduino-cli compile --fqbn "$FQBN" --build-path "$BUILD_DIR" TigoServer
+
+ESPOTA="$(find "$HOME/Library/Arduino15/packages/esp32/hardware/esp32" -maxdepth 3 -name espota.py | head -1)"
+BIN="$BUILD_DIR/TigoServer.ino.bin"
 
 echo "==> Lade OTA-Update auf $IP hoch..."
-arduino-cli upload -p "$IP" --fqbn "$FQBN" --upload-field "password=$OTA_PASSWORD" TigoServer
+python3 "$ESPOTA" -i "$IP" -p "$OTA_PORT" "--auth=$OTA_PASSWORD" -f "$BIN"
