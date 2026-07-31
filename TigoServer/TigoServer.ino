@@ -8,6 +8,7 @@
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <esp_task_wdt.h>
 
 const char* hostname = "TigoServer";
 const char* TZ_STRING = "CET-1CEST,M3.5.0/2,M10.5.0/3"; // Modifica per il tuo fuso orario
@@ -373,16 +374,33 @@ void setup() {
   SPIFFS.begin(true);
   loadNodeTable();
   loadPanelMap();
+
+  // Task-Watchdog: reboottet automatisch, falls loop() mal >30s haengt,
+  // statt tagelang unbemerkt eingefroren zu bleiben.
+  esp_task_wdt_config_t wdtConfig = {
+    .timeout_ms = 30000,
+    .idle_core_mask = 0,
+    .trigger_panic = true
+  };
+  if (esp_task_wdt_init(&wdtConfig) == ESP_ERR_INVALID_STATE) {
+    esp_task_wdt_reconfigure(&wdtConfig);
+  }
+  esp_task_wdt_add(NULL);
 }
 
 void loop() {
+  esp_task_wdt_reset();
   currentMillis = millis();
   ArduinoOTA.handle();
   MQTT_Client.loop();
   yield();
   delay(10);
 
-  static String incomingData = "";
+  // Feste Puffergroesse statt String: vermeidet Heap-Fragmentierung durch
+  // Byte-fuer-Byte-Reallokation bei kontinuierlichem RS485-Traffic.
+  constexpr size_t INCOMING_BUF_SIZE = 1024;
+  static uint8_t incomingBuf[INCOMING_BUF_SIZE];
+  static size_t incomingLen = 0;
   static bool frameStarted = false;
 
   if(WiFi.status() == WL_CONNECTED){
@@ -397,30 +415,40 @@ void loop() {
 
   // Lettura seriale RS485: eseguita ad ogni ciclo di loop per non perdere byte
   while (Serial1.available()) {
-    char incomingByte = Serial1.read();
-    incomingData += incomingByte;
+    uint8_t incomingByte = Serial1.read();
+    if (incomingLen < INCOMING_BUF_SIZE) {
+      incomingBuf[incomingLen++] = incomingByte;
+    }
+
+    bool endsWithEnd   = incomingLen >= 2 && incomingBuf[incomingLen - 2] == 0x7E && incomingBuf[incomingLen - 1] == 0x08;
+    bool endsWithStart = incomingLen >= 2 && incomingBuf[incomingLen - 2] == 0x7E && incomingBuf[incomingLen - 1] == 0x07;
+
     // Check if frame starts
-    if (!frameStarted && incomingData.endsWith("\x7E\x08")) {
+    if (!frameStarted && endsWithEnd) {
       WebSerial.println("Paket verpasst!");
     }
-    if (!frameStarted && incomingData.endsWith("\x7E\x07")) {
+    if (!frameStarted && endsWithStart) {
         // Start of a new frame detected
         frameStarted = true;
-        incomingData = "\x7E\x07";  // Reset buffer to only contain start delimiter
+        incomingBuf[0] = 0x7E; incomingBuf[1] = 0x07;  // Reset buffer to only contain start delimiter
+        incomingLen = 2;
     }
     // Check if frame ends
-    else if (frameStarted && incomingData.endsWith("\x7E\x08")) {
+    else if (frameStarted && endsWithEnd) {
         // End of frame detected
         frameStarted = false; // Reset flag for the next frame
         // Remove start (0x7E 0x07) and end (0x7E 0x08) sequences
-        String frame = incomingData.substring(2, incomingData.length() - 2);
-        incomingData = ""; // Clear buffer for next potential frame
+        String frame;
+        size_t payloadLen = (incomingLen > 4) ? incomingLen - 4 : 0;
+        frame.reserve(payloadLen);
+        for (size_t i = 2; i < incomingLen - 2; i++) frame += (char)incomingBuf[i];
+        incomingLen = 0; // Clear buffer for next potential frame
         // Process the frame
         processFrame(frame);
     }
     // Reset if the buffer grows too large (safety mechanism)
-    if (incomingData.length() > 1024) {
-        incomingData = "";
+    if (incomingLen >= INCOMING_BUF_SIZE) {
+        incomingLen = 0;
         frameStarted = false;
         WebSerial.println("Buffer zu klein!");
     }
