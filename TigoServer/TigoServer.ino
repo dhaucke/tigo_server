@@ -368,7 +368,7 @@ void setup() {
   MQTT_Client.setServer(MQTT_BROKER, 1883);
   MQTT_Client.setBufferSize(1024);
   ArduinoOTA.setHostname(hostname);
-  ArduinoOTA.setPassword("Tigo$olar")
+  ArduinoOTA.setPassword("Tigo$olar");
   ArduinoOTA.begin();
   SPIFFS.begin(true);
   loadNodeTable();
